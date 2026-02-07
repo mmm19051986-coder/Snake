@@ -5,22 +5,26 @@
 <title>Змейка знаний</title>
 
 <style>
-body { font-family: Arial, sans-serif; background:#f2f2f2; }
+body {
+  font-family: Arial, sans-serif;
+  background:#e3f2fd;
+}
 
 #game-wrapper {
-  width: 700px;
+  width: 720px;
   margin: 20px auto;
-  background:#fff;
+  background:#ffffff;
   padding:12px;
-  border-radius:12px;
+  border-radius:14px;
 }
 
 h2 { text-align:center; margin:6px 0; }
 
 #editor {
-  border:1px solid #ddd;
+  border:1px solid #cfd8dc;
   padding:10px;
   margin-bottom:10px;
+  background:#f9fbfd;
 }
 
 label { font-weight:bold; display:block; margin-top:6px; }
@@ -39,38 +43,46 @@ button {
 canvas {
   display:block;
   margin:auto;
-  border:2px solid #ddd;
+  border-radius:10px;
+  background:#f1f8ff;
 }
 
-#progress { height:10px; background:#ddd; margin-top:8px; }
-#progress-bar { height:100%; width:0%; background:#4caf50; }
+#progress {
+  height:10px;
+  background:#cfd8dc;
+  margin-top:8px;
+  border-radius:5px;
+}
+#progress-bar {
+  height:100%;
+  width:0%;
+  background:#66bb6a;
+}
 
 #feedback {
   text-align:center;
   font-weight:bold;
   min-height:22px;
 }
-.success { color:green; }
-.error { color:orange; }
-.fail { color:#c62828; }
+.success { color:#2e7d32; }
+.error { color:#ef6c00; }
 </style>
 </head>
 
 <body>
 
 <div id="game-wrapper">
-  <h2 id="taskTitle">Собери только существительные</h2>
+  <h2 id="taskTitle">Собери только глаголы</h2>
 
-  <!-- РЕДАКТОР -->
   <div id="editor">
     <label>Вопрос / задание</label>
-    <input id="taskInput" value="Собери только существительные">
+    <input id="taskInput" value="Собери только глаголы">
 
-    <label>Правильные слова (через запятую)</label>
-    <textarea id="correctInput">стол, дом, окно, книга, молоко</textarea>
+    <label>Правильные слова</label>
+    <textarea id="correctInput">бегать, прыгать, играть</textarea>
 
     <label>Неправильные слова</label>
-    <textarea id="wrongInput">бежать, красивый, важный</textarea>
+    <textarea id="wrongInput">молоко, красивый, важный</textarea>
 
     <button id="startBtn">▶ Играть</button>
   </div>
@@ -82,200 +94,173 @@ canvas {
 </div>
 
 <script>
-/* =====================
-   ПАРАМЕТРЫ
-===================== */
+/* ===== ПАРАМЕТРЫ ===== */
+const SPEED = 1.2;
+const TURN_SPEED = 0.08;
+const SEGMENT_STEP = 10;
+const REQUIRED = 5;
 
-const SEGMENT_STEP = 12;
-const MOVE_SPEED = 2;
-const REQUIRED = 6;
-
-/* =====================
-   ПЕРЕМЕННЫЕ
-===================== */
-
+/* ===== ПЕРЕМЕННЫЕ ===== */
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-let path = [];
-let maxLength = 24;
+let snakePath = [];
+let maxLength = 30;
+let angle = 0;
+let targetAngle = 0;
 
-let target = null;
 let items = [];
 let correctCount = 0;
 let gameRunning = false;
+let glowTimer = 0;
 let CONFIG = null;
 
-/* =====================
-   КЛИК
-===================== */
-
+/* ===== КЛИК = НАПРАВЛЕНИЕ ===== */
 canvas.addEventListener("click", e => {
   if (!gameRunning) return;
   const r = canvas.getBoundingClientRect();
-  target = { x:e.clientX-r.left, y:e.clientY-r.top };
+  const x = e.clientX - r.left;
+  const y = e.clientY - r.top;
+  const head = snakePath[0];
+  targetAngle = Math.atan2(y - head.y, x - head.x);
 });
 
-/* =====================
-   СТАРТ
-===================== */
-
+/* ===== СТАРТ ===== */
 document.getElementById("startBtn").onclick = () => {
   CONFIG = {
-    task: document.getElementById("taskInput").value,
-    correct: document.getElementById("correctInput").value.split(",").map(s=>s.trim()),
-    wrong: document.getElementById("wrongInput").value.split(",").map(s=>s.trim())
+    task: taskInput.value,
+    correct: correctInput.value.split(",").map(s=>s.trim()),
+    wrong: wrongInput.value.split(",").map(s=>s.trim())
   };
-
-  document.getElementById("taskTitle").innerText = CONFIG.task;
-
+  taskTitle.innerText = CONFIG.task;
   resetGame();
   gameRunning = true;
 };
 
-/* =====================
-   ЭЛЕМЕНТЫ
-===================== */
+/* ===== ЭЛЕМЕНТЫ ===== */
+function spawnItem(forceCorrect=false) {
+  const pool = forceCorrect
+    ? CONFIG.correct.map(t=>({text:t, correct:true}))
+    : [
+        ...CONFIG.correct.map(t=>({text:t, correct:true})),
+        ...CONFIG.wrong.map(t=>({text:t, correct:false}))
+      ];
 
-function spawnItem() {
-  const all = [
-    ...CONFIG.correct.map(t=>({text:t, correct:true})),
-    ...CONFIG.wrong.map(t=>({text:t, correct:false}))
-  ];
-  const it = all[Math.floor(Math.random()*all.length)];
+  const it = pool[Math.floor(Math.random()*pool.length)];
   items.push({
     ...it,
-    x:Math.random()*560+20,
-    y:Math.random()*360+20
+    x:Math.random()*540+30,
+    y:Math.random()*340+30
   });
 }
 
 function ensureItems() {
+  const hasCorrect = items.some(i=>i.correct);
+  if (!hasCorrect) spawnItem(true);
   while (items.length < 4) spawnItem();
 }
 
-/* =====================
-   ДВИЖЕНИЕ
-===================== */
-
+/* ===== ДВИЖЕНИЕ ===== */
 function moveSnake() {
-  if (!target || path.length === 0) return;
-
-  const head = path[0];
-  const dx = target.x-head.x;
-  const dy = target.y-head.y;
-  const d = Math.sqrt(dx*dx + dy*dy);
-
-  if (d < 1) return;
+  angle += (targetAngle - angle) * TURN_SPEED;
+  const head = snakePath[0];
 
   const newHead = {
-    x: head.x + (dx/d)*MOVE_SPEED,
-    y: head.y + (dy/d)*MOVE_SPEED
+    x: head.x + Math.cos(angle) * SPEED,
+    y: head.y + Math.sin(angle) * SPEED
   };
 
-  path.unshift(newHead);
-  while (path.length > maxLength) path.pop();
+  snakePath.unshift(newHead);
+  while (snakePath.length > maxLength) snakePath.pop();
 }
 
-/* =====================
-   САМОПЕРЕСЕЧЕНИЕ
-===================== */
-
-function checkSelfCollision() {
-  const head = path[0];
-  for (let i = 8; i < path.length; i++) {
-    const dx = head.x - path[i].x;
-    const dy = head.y - path[i].y;
-    if (Math.sqrt(dx*dx + dy*dy) < 6) {
-      gameRunning = false;
-      showFail("Змейка запуталась 🌀");
-    }
-  }
-}
-
-/* =====================
-   СБОР
-===================== */
-
-function checkItemCollision() {
-  const head = path[0];
-  items.forEach((item,i)=>{
-    const dx=head.x-item.x;
-    const dy=head.y-item.y;
-    if (Math.sqrt(dx*dx+dy*dy) < 14) {
-      if (item.correct) {
+/* ===== СБОР ===== */
+function checkItems() {
+  const head = snakePath[0];
+  items.forEach((it,i)=>{
+    const dx=head.x-it.x;
+    const dy=head.y-it.y;
+    if (Math.sqrt(dx*dx+dy*dy)<16) {
+      if (it.correct) {
         correctCount++;
         maxLength += SEGMENT_STEP;
+        glowTimer = 15;
         showFeedback(true);
-      } else {
-        showFeedback(false);
-      }
+      } else showFeedback(false);
       items.splice(i,1);
     }
   });
 }
 
-/* =====================
-   ПРОГРЕСС
-===================== */
-
+/* ===== ПРОГРЕСС ===== */
 function updateProgress() {
-  const p = Math.min(correctCount / REQUIRED * 100, 100);
-  document.getElementById("progress-bar").style.width = p + "%";
+  const p=Math.min(correctCount/REQUIRED*100,100);
+  progressBar.style.width=p+"%";
+  if (p>=100) {
+    gameRunning=false;
+    showStar();
+  }
 }
 
-/* =====================
-   ФИДБЕК
-===================== */
-
-function showFeedback(ok) {
-  const f = document.getElementById("feedback");
-  f.innerText = ok ? "Верно!" : "Подумай ещё";
-  f.className = ok ? "success" : "error";
-  setTimeout(()=>f.innerText="",600);
-}
-
-function showFail(text) {
-  const f = document.getElementById("feedback");
-  f.innerText = text;
-  f.className = "fail";
-}
-
-/* =====================
-   ОТРИСОВКА
-===================== */
-
+/* ===== ОТРИСОВКА ===== */
 function draw() {
   ctx.clearRect(0,0,600,400);
 
   // элементы
   items.forEach(it=>{
-    ctx.fillStyle = it.correct ? "#66bb6a" : "#bdbdbd";
-    ctx.fillRect(it.x-8,it.y-8,16,16);
+    ctx.fillStyle=it.correct?"#81c784":"#b0bec5";
+    ctx.beginPath();
+    ctx.arc(it.x,it.y,10,0,Math.PI*2);
+    ctx.fill();
     ctx.fillStyle="#000";
-    ctx.fillText(it.text,it.x-10,it.y-12);
+    ctx.fillText(it.text,it.x-10,it.y-14);
   });
 
   // змейка
-  ctx.strokeStyle="#4caf50";
-  ctx.lineWidth=6;
+  ctx.lineWidth=8;
+  ctx.strokeStyle=glowTimer>0?"#aed581":"#66bb6a";
   ctx.beginPath();
-  path.forEach((p,i)=>{
+  snakePath.forEach((p,i)=>{
     if(i===0) ctx.moveTo(p.x,p.y);
     else ctx.lineTo(p.x,p.y);
   });
   ctx.stroke();
+
+  // голова + глазки
+  const h=snakePath[0];
+  ctx.fillStyle="#388e3c";
+  ctx.beginPath();
+  ctx.arc(h.x,h.y,7,0,Math.PI*2);
+  ctx.fill();
+
+  ctx.fillStyle="#000";
+  ctx.beginPath();
+  ctx.arc(h.x+3,h.y-2,1.5,0,Math.PI*2);
+  ctx.arc(h.x+3,h.y+2,1.5,0,Math.PI*2);
+  ctx.fill();
+
+  if(glowTimer>0) glowTimer--;
 }
 
-/* =====================
-   ЦИКЛ
-===================== */
+/* ===== ЗВЕЗДА ===== */
+function showStar() {
+  ctx.fillStyle="#ffd54f";
+  ctx.font="40px Arial";
+  ctx.fillText("⭐ Молодец!",180,200);
+}
 
+/* ===== ФИДБЕК ===== */
+function showFeedback(ok) {
+  feedback.innerText=ok?"Верно!":"Подумай ещё";
+  feedback.className=ok?"success":"error";
+  setTimeout(()=>feedback.innerText="",600);
+}
+
+/* ===== ЦИКЛ ===== */
 function loop() {
   if (gameRunning) {
     moveSnake();
-    checkItemCollision();
-    checkSelfCollision();
+    checkItems();
     ensureItems();
     updateProgress();
   }
@@ -283,23 +268,15 @@ function loop() {
   requestAnimationFrame(loop);
 }
 
-/* =====================
-   СБРОС
-===================== */
-
+/* ===== СБРОС ===== */
 function resetGame() {
-  path = [{ x:50, y:50 }];
-  maxLength = 24;
-  correctCount = 0;
-  items = [];
-  target = null;
-  document.getElementById("progress-bar").style.width="0%";
+  snakePath=[{x:300,y:200}];
+  angle=0; targetAngle=0;
+  items=[]; correctCount=0;
+  maxLength=30;
+  progressBar.style.width="0%";
   ensureItems();
 }
-
-/* =====================
-   СТАРТ
-===================== */
 
 loop();
 </script>
