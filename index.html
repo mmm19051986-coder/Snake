@@ -82,7 +82,6 @@ canvas {
   font-size:16px;
 }
 
-/* фейерверк поверх */
 #fireworks {
   position:absolute;
   inset:0;
@@ -96,7 +95,6 @@ canvas {
 <div id="game-wrapper">
   <h2 id="taskTitle">Собери только существительные</h2>
 
-  <!-- РЕДАКТОР -->
   <div id="editor">
     <label>Вопрос / задание</label>
     <input id="taskInput" value="Собери только существительные">
@@ -127,6 +125,23 @@ canvas {
 
 <script>
 /* =====================
+   DOM-ЭЛЕМЕНТЫ (ЯВНО!)
+===================== */
+
+const taskInput   = document.getElementById("taskInput");
+const correctInput= document.getElementById("correctInput");
+const wrongInput  = document.getElementById("wrongInput");
+const winInput    = document.getElementById("winInput");
+const taskTitle   = document.getElementById("taskTitle");
+const progressBar = document.getElementById("progress-bar");
+const winScreen   = document.getElementById("winScreen");
+const winText     = document.getElementById("winText");
+const restartBtn  = document.getElementById("restartBtn");
+
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+/* =====================
    НАСТРОЙКИ
 ===================== */
 
@@ -136,9 +151,6 @@ const TOTAL_ITEMS = 6;
 /* =====================
    ПЕРЕМЕННЫЕ
 ===================== */
-
-const canvas = document.getElementById("gameCanvas");
-const ctx = canvas.getContext("2d");
 
 let path = [];
 let direction = { x:1, y:0 };
@@ -166,13 +178,18 @@ canvas.addEventListener("click", e => {
    СТАРТ
 ===================== */
 
-document.getElementById("startBtn").onclick = () => {
+document.getElementById("startBtn").addEventListener("click", () => {
   CONFIG = {
     task: taskInput.value,
-    correct: correctInput.value.split(",").map(s=>s.trim()),
-    wrong: wrongInput.value.split(",").map(s=>s.trim()),
+    correct: correctInput.value.split(",").map(s=>s.trim()).filter(Boolean),
+    wrong: wrongInput.value.split(",").map(s=>s.trim()).filter(Boolean),
     winText: winInput.value
   };
+
+  if (CONFIG.correct.length === 0) {
+    alert("Добавьте хотя бы одно правильное слово");
+    return;
+  }
 
   REQUIRED = CONFIG.correct.length;
   taskTitle.innerText = CONFIG.task;
@@ -180,7 +197,7 @@ document.getElementById("startBtn").onclick = () => {
   resetGame();
   hideWin();
   gameRunning = true;
-};
+});
 
 /* =====================
    СПАВН
@@ -292,53 +309,19 @@ function loop() {
 }
 
 /* =====================
-   ПОБЕДА + ФЕЙЕРВЕРК
+   ПОБЕДА
 ===================== */
-
-const fw = document.getElementById("fireworks");
-const fctx = fw.getContext("2d");
-fw.width = 720;
-fw.height = 500;
-let particles = [];
-
-function launchFirework() {
-  for (let i=0;i<30;i++) {
-    particles.push({
-      x:Math.random()*fw.width,
-      y:Math.random()*fw.height/2,
-      vx:(Math.random()-0.5)*4,
-      vy:(Math.random()-0.5)*4,
-      life:60
-    });
-  }
-}
-
-function drawFireworks() {
-  fctx.clearRect(0,0,fw.width,fw.height);
-  particles.forEach(p=>{
-    p.x+=p.vx; p.y+=p.vy; p.life--;
-    fctx.fillStyle="hsl("+Math.random()*360+",80%,60%)";
-    fctx.fillRect(p.x,p.y,3,3);
-  });
-  particles = particles.filter(p=>p.life>0);
-  requestAnimationFrame(drawFireworks);
-}
 
 function showWin() {
   winText.innerText = CONFIG.winText;
   winScreen.style.display="flex";
-  launchFirework();
-  drawFireworks();
 }
 
 function hideWin() {
   winScreen.style.display="none";
-  particles=[];
 }
 
-restartBtn.onclick = () => {
-  hideWin();
-};
+restartBtn.addEventListener("click", hideWin);
 
 /* =====================
    СБРОС
@@ -352,6 +335,10 @@ function resetGame() {
   progressBar.style.width="0%";
   ensureItems();
 }
+
+/* =====================
+   СТАРТ ЦИКЛА
+===================== */
 
 loop();
 </script>
