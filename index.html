@@ -5,45 +5,72 @@
 <title>Змейка знаний</title>
 
 <style>
-  body { font-family: Arial, sans-serif; background:#f2f2f2; }
+body { font-family: Arial, sans-serif; background:#f2f2f2; }
 
-  #game-wrapper {
-    width: 640px;
-    margin: 20px auto;
-    background: #fff;
-    padding: 12px;
-    border-radius: 12px;
-  }
+#game-wrapper {
+  width: 680px;
+  margin: 20px auto;
+  background:#fff;
+  padding:12px;
+  border-radius:12px;
+}
 
-  #task { text-align:center; font-size:20px; margin-bottom:6px; }
+h2 { text-align:center; margin:6px 0; }
 
-  #controls { text-align:center; margin-bottom:6px; }
+#editor {
+  border:1px solid #ddd;
+  padding:8px;
+  margin-bottom:10px;
+}
 
-  button { padding:6px 14px; cursor:pointer; }
+textarea {
+  width:100%;
+  height:60px;
+  margin-bottom:6px;
+}
 
-  canvas {
-    display:block;
-    margin:auto;
-    border:2px solid #ddd;
-    background:#fff;
-  }
+select, button {
+  padding:6px;
+  margin-top:4px;
+}
 
-  #progress { height:10px; background:#ddd; border-radius:5px; margin-top:8px; }
-  #progress-bar { height:100%; width:0%; background:#4caf50; }
+canvas {
+  display:block;
+  margin:auto;
+  border:2px solid #ddd;
+}
 
-  #feedback { text-align:center; margin-top:6px; font-weight:bold; min-height:20px; }
-  .success { color:green; }
-  .error { color:orange; }
+#progress { height:10px; background:#ddd; margin-top:8px; }
+#progress-bar { height:100%; width:0%; background:#4caf50; }
+
+#feedback { text-align:center; font-weight:bold; min-height:20px; }
+.success { color:green; }
+.error { color:orange; }
 </style>
 </head>
 
 <body>
 
 <div id="game-wrapper">
-  <div id="task">Собери только существительные</div>
+  <h2>Собери только существительные</h2>
 
-  <div id="controls">
-    <button id="startBtn">▶ Старт</button>
+  <!-- РЕДАКТОР -->
+  <div id="editor">
+    <b>Правильные слова (через запятую)</b>
+    <textarea id="correctInput">стол, дом, окно, книга</textarea>
+
+    <b>Неправильные слова</b>
+    <textarea id="wrongInput">бежать, красивый</textarea>
+
+    <b>Уровень сложности</b>
+    <select id="level">
+      <option value="easy">Лёгкий</option>
+      <option value="medium">Средний</option>
+      <option value="hard">Сложный</option>
+    </select>
+
+    <br>
+    <button id="startBtn">▶ Играть</button>
   </div>
 
   <canvas id="gameCanvas" width="600" height="400"></canvas>
@@ -54,15 +81,13 @@
 
 <script>
 /* =====================
-   НАСТРОЙКИ
+   УРОВНИ
 ===================== */
 
-const CONFIG = {
-  correct: ["стол","дом","окно","книга"],
-  wrong: ["бежать","красивый"],
-  required: 6,
-  speed: 2,
-  minItemsOnField: 4
+const LEVELS = {
+  easy:   { speed:1.5, required:4, minItems:3 },
+  medium: { speed:2.5, required:6, minItems:4 },
+  hard:   { speed:3.5, required:8, minItems:5 }
 };
 
 /* =====================
@@ -72,30 +97,38 @@ const CONFIG = {
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-let snake = [{ x: 50, y: 50 }];
+let snake = [{ x:50, y:50 }];
 let target = null;
 let items = [];
 let correctCount = 0;
 let gameRunning = false;
 
+let CONFIG = null;
+
 /* =====================
-   УПРАВЛЕНИЕ КЛИКОМ
+   КЛИК
 ===================== */
 
 canvas.addEventListener("click", e => {
   if (!gameRunning) return;
-  const rect = canvas.getBoundingClientRect();
-  target = {
-    x: e.clientX - rect.left,
-    y: e.clientY - rect.top
-  };
+  const r = canvas.getBoundingClientRect();
+  target = { x:e.clientX-r.left, y:e.clientY-r.top };
 });
 
 /* =====================
-   СТАРТ
+   СТАРТ ИЗ РЕДАКТОРА
 ===================== */
 
 document.getElementById("startBtn").onclick = () => {
+  const correct = document.getElementById("correctInput").value
+    .split(",").map(s=>s.trim()).filter(Boolean);
+
+  const wrong = document.getElementById("wrongInput").value
+    .split(",").map(s=>s.trim()).filter(Boolean);
+
+  const levelKey = document.getElementById("level").value;
+  CONFIG = { correct, wrong, ...LEVELS[levelKey] };
+
   resetGame();
   gameRunning = true;
 };
@@ -106,44 +139,39 @@ document.getElementById("startBtn").onclick = () => {
 
 function spawnItem() {
   const all = [
-    ...CONFIG.correct.map(t => ({ text:t, correct:true })),
-    ...CONFIG.wrong.map(t => ({ text:t, correct:false }))
+    ...CONFIG.correct.map(t=>({ text:t, correct:true })),
+    ...CONFIG.wrong.map(t=>({ text:t, correct:false }))
   ];
-  const item = all[Math.floor(Math.random()*all.length)];
+  const it = all[Math.floor(Math.random()*all.length)];
   items.push({
-    ...item,
-    x: Math.random()*560+20,
-    y: Math.random()*360+20
+    ...it,
+    x:Math.random()*560+20,
+    y:Math.random()*360+20
   });
 }
 
 function ensureItems() {
-  while (items.length < CONFIG.minItemsOnField) {
-    spawnItem();
-  }
+  while (items.length < CONFIG.minItems) spawnItem();
 }
 
 /* =====================
-   ДВИЖЕНИЕ + ХВОСТ
+   ДВИЖЕНИЕ + РОСТ x2
 ===================== */
 
 function moveSnake() {
   if (!target) return;
-
   const head = snake[0];
-  const dx = target.x - head.x;
-  const dy = target.y - head.y;
-  const dist = Math.sqrt(dx*dx + dy*dy);
+  const dx = target.x-head.x;
+  const dy = target.y-head.y;
+  const d = Math.sqrt(dx*dx+dy*dy);
+  if (d<2) return;
 
-  if (dist < 2) return;
+  snake.unshift({
+    x:head.x+(dx/d)*CONFIG.speed,
+    y:head.y+(dy/d)*CONFIG.speed
+  });
 
-  const newHead = {
-    x: head.x + (dx/dist)*CONFIG.speed,
-    y: head.y + (dy/dist)*CONFIG.speed
-  };
-
-  snake.unshift(newHead);
-  while (snake.length > correctCount + 1) snake.pop();
+  while (snake.length > Math.max(1, correctCount*2)) snake.pop();
 }
 
 /* =====================
@@ -152,19 +180,15 @@ function moveSnake() {
 
 function checkCollision() {
   const head = snake[0];
-
-  items.forEach((item, index) => {
-    const dx = head.x - item.x;
-    const dy = head.y - item.y;
-
-    if (Math.sqrt(dx*dx + dy*dy) < 14) {
+  items.forEach((item,i)=>{
+    const dx=head.x-item.x;
+    const dy=head.y-item.y;
+    if (Math.sqrt(dx*dx+dy*dy)<14) {
       if (item.correct) {
         correctCount++;
         showFeedback(true);
-      } else {
-        showFeedback(false);
-      }
-      items.splice(index,1);
+      } else showFeedback(false);
+      items.splice(i,1);
     }
   });
 }
@@ -174,15 +198,11 @@ function checkCollision() {
 ===================== */
 
 function updateProgress() {
-  const percent = Math.min(
-    (correctCount / CONFIG.required) * 100,
-    100
-  );
-  document.getElementById("progress-bar").style.width = percent+"%";
-
-  if (percent >= 100) {
-    alert("🎉 Задание выполнено!");
-    gameRunning = false;
+  const p = Math.min(correctCount/CONFIG.required*100,100);
+  document.getElementById("progress-bar").style.width=p+"%";
+  if (p>=100) {
+    alert("🎉 Уровень пройден!");
+    gameRunning=false;
   }
 }
 
@@ -190,11 +210,11 @@ function updateProgress() {
    ФИДБЕК
 ===================== */
 
-function showFeedback(success) {
-  const box = document.getElementById("feedback");
-  box.innerText = success ? "Верно!" : "Подумай ещё";
-  box.className = success ? "success" : "error";
-  setTimeout(()=>box.innerText="",700);
+function showFeedback(ok) {
+  const f=document.getElementById("feedback");
+  f.innerText=ok?"Верно!":"Подумай ещё";
+  f.className=ok?"success":"error";
+  setTimeout(()=>f.innerText="",600);
 }
 
 /* =====================
@@ -202,20 +222,18 @@ function showFeedback(success) {
 ===================== */
 
 function draw() {
-  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.clearRect(0,0,600,400);
 
-  // элементы
-  items.forEach(item=>{
-    ctx.fillStyle = item.correct ? "#66bb6a" : "#bdbdbd";
-    ctx.fillRect(item.x-8,item.y-8,16,16);
+  items.forEach(it=>{
+    ctx.fillStyle=it.correct?"#66bb6a":"#bdbdbd";
+    ctx.fillRect(it.x-8,it.y-8,16,16);
     ctx.fillStyle="#000";
-    ctx.fillText(item.text,item.x-10,item.y-12);
+    ctx.fillText(it.text,it.x-10,it.y-12);
   });
 
-  // хвост
-  snake.forEach((seg,i)=>{
-    ctx.fillStyle = i===0 ? "#2e7d32" : "#81c784";
-    ctx.fillRect(seg.x-8,seg.y-8,16,16);
+  snake.forEach((s,i)=>{
+    ctx.fillStyle=i==0?"#2e7d32":"#81c784";
+    ctx.fillRect(s.x-8,s.y-8,16,16);
   });
 }
 
@@ -239,10 +257,10 @@ function loop() {
 ===================== */
 
 function resetGame() {
-  snake = [{ x:50, y:50 }];
-  items = [];
-  correctCount = 0;
-  target = null;
+  snake=[{x:50,y:50}];
+  items=[];
+  target=null;
+  correctCount=0;
   document.getElementById("progress-bar").style.width="0%";
   ensureItems();
 }
