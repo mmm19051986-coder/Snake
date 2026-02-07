@@ -62,7 +62,6 @@ canvas {
   min-height:22px;
 }
 .success { color:green; }
-.error { color:#ef6c00; }
 .fail { color:#b71c1c; }
 </style>
 </head>
@@ -98,10 +97,9 @@ canvas {
 
 const MOVE_SPEED = 0.9;
 const SEGMENT_STEP = 10;
-const REQUIRED = 6;
-const MIN_CORRECT_ON_FIELD = 2;
 const TOTAL_ITEMS_ON_FIELD = 6;
-const SAFE_TAIL_DISTANCE = 20; // 🔒 защита от ложного самопересечения
+const MIN_CORRECT_ON_FIELD = 1;
+const SAFE_TAIL_DISTANCE = 20;
 
 /* =====================
    ПЕРЕМЕННЫЕ
@@ -112,10 +110,11 @@ const ctx = canvas.getContext("2d");
 
 let path = [];
 let maxLength = 30;
-
 let direction = { x: 1, y: 0 };
+
 let items = [];
 let correctCount = 0;
+let REQUIRED = 0;
 let gameRunning = false;
 let CONFIG = null;
 
@@ -144,10 +143,11 @@ canvas.addEventListener("click", e => {
 document.getElementById("startBtn").onclick = () => {
   CONFIG = {
     task: document.getElementById("taskInput").value,
-    correct: document.getElementById("correctInput").value.split(",").map(s=>s.trim()),
-    wrong: document.getElementById("wrongInput").value.split(",").map(s=>s.trim())
+    correct: document.getElementById("correctInput").value.split(",").map(s=>s.trim()).filter(Boolean),
+    wrong: document.getElementById("wrongInput").value.split(",").map(s=>s.trim()).filter(Boolean)
   };
 
+  REQUIRED = CONFIG.correct.length;
   document.getElementById("taskTitle").innerText = CONFIG.task;
 
   resetGame();
@@ -155,7 +155,7 @@ document.getElementById("startBtn").onclick = () => {
 };
 
 /* =====================
-   СПАВН ЭЛЕМЕНТОВ
+   СПАВН
 ===================== */
 
 function spawnItem(forceCorrect=false) {
@@ -185,8 +185,6 @@ function ensureItems() {
 ===================== */
 
 function moveSnake() {
-  if (!path.length) return;
-
   const head = path[0];
   const newHead = {
     x: head.x + direction.x * MOVE_SPEED,
@@ -207,12 +205,11 @@ function moveSnake() {
 }
 
 /* =====================
-   САМОПЕРЕСЕЧЕНИЕ (ИСПРАВЛЕНО)
+   САМОПЕРЕСЕЧЕНИЕ
 ===================== */
 
 function checkSelfCollision() {
   const head = path[0];
-
   for (let i = SAFE_TAIL_DISTANCE; i < path.length; i++) {
     const dx = head.x - path[i].x;
     const dy = head.y - path[i].y;
@@ -235,15 +232,22 @@ function checkItemCollision() {
     const dx=head.x-item.x;
     const dy=head.y-item.y;
     if (Math.sqrt(dx*dx+dy*dy) < 14) {
+
       if (!item.correct) {
         gameRunning = false;
         showFail("Неверный выбор ❌");
         return;
       }
+
       correctCount++;
       maxLength += SEGMENT_STEP;
-      showFeedback();
       items.splice(i,1);
+      updateProgress();
+
+      if (correctCount >= REQUIRED) {
+        gameRunning = false;
+        showSuccess("🎉 Задание выполнено!");
+      }
     }
   });
 }
@@ -253,7 +257,7 @@ function checkItemCollision() {
 ===================== */
 
 function updateProgress() {
-  const p = Math.min(correctCount / REQUIRED * 100, 100);
+  const p = (correctCount / REQUIRED) * 100;
   document.getElementById("progress-bar").style.width = p + "%";
 }
 
@@ -261,17 +265,16 @@ function updateProgress() {
    ФИДБЕК
 ===================== */
 
-function showFeedback() {
-  const f = document.getElementById("feedback");
-  f.innerText = "Верно!";
-  f.className = "success";
-  setTimeout(()=>f.innerText="",600);
-}
-
 function showFail(text) {
   const f = document.getElementById("feedback");
   f.innerText = text;
   f.className = "fail";
+}
+
+function showSuccess(text) {
+  const f = document.getElementById("feedback");
+  f.innerText = text;
+  f.className = "success";
 }
 
 /* =====================
@@ -281,13 +284,18 @@ function showFail(text) {
 function draw() {
   ctx.clearRect(0,0,600,400);
 
+  // одинаковые иконки
   items.forEach(it=>{
-    ctx.fillStyle = it.correct ? "#66bb6a" : "#cfd8dc";
-    ctx.fillRect(it.x-8,it.y-8,16,16);
+    ctx.fillStyle = "#90caf9";
+    ctx.beginPath();
+    ctx.arc(it.x, it.y, 10, 0, Math.PI*2);
+    ctx.fill();
+
     ctx.fillStyle="#000";
-    ctx.fillText(it.text,it.x-10,it.y-12);
+    ctx.fillText(it.text, it.x - 12, it.y - 14);
   });
 
+  // змейка
   ctx.strokeStyle="#4caf50";
   ctx.lineWidth=6;
   ctx.beginPath();
@@ -308,7 +316,6 @@ function loop() {
     checkItemCollision();
     checkSelfCollision();
     ensureItems();
-    updateProgress();
   }
   draw();
   requestAnimationFrame(loop);
