@@ -23,16 +23,7 @@ h2 { text-align:center; margin:6px 0; }
   margin-bottom:10px;
 }
 
-textarea {
-  width:100%;
-  height:60px;
-  margin-bottom:6px;
-}
-
-select, button {
-  padding:6px;
-  margin-top:4px;
-}
+textarea { width:100%; height:50px; }
 
 canvas {
   display:block;
@@ -54,22 +45,14 @@ canvas {
 <div id="game-wrapper">
   <h2>Собери только существительные</h2>
 
-  <!-- РЕДАКТОР -->
   <div id="editor">
-    <b>Правильные слова (через запятую)</b>
+    <b>Правильные слова</b>
     <textarea id="correctInput">стол, дом, окно, книга</textarea>
 
     <b>Неправильные слова</b>
     <textarea id="wrongInput">бежать, красивый</textarea>
 
-    <b>Уровень сложности</b>
-    <select id="level">
-      <option value="easy">Лёгкий</option>
-      <option value="medium">Средний</option>
-      <option value="hard">Сложный</option>
-    </select>
-
-    <br>
+    <br><br>
     <button id="startBtn">▶ Играть</button>
   </div>
 
@@ -81,28 +64,20 @@ canvas {
 
 <script>
 /* =====================
-   УРОВНИ
-===================== */
-
-const LEVELS = {
-  easy:   { speed:1.5, required:4, minItems:3 },
-  medium: { speed:2.5, required:6, minItems:4 },
-  hard:   { speed:3.5, required:8, minItems:5 }
-};
-
-/* =====================
    ПЕРЕМЕННЫЕ
 ===================== */
 
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-let snake = [{ x:50, y:50 }];
+let path = [];          // путь змейки
+let maxLength = 20;     // длина пути (ВИДИМАЯ)
+let speed = 2;
+
 let target = null;
 let items = [];
 let correctCount = 0;
 let gameRunning = false;
-
 let CONFIG = null;
 
 /* =====================
@@ -116,19 +91,15 @@ canvas.addEventListener("click", e => {
 });
 
 /* =====================
-   СТАРТ ИЗ РЕДАКТОРА
+   СТАРТ
 ===================== */
 
 document.getElementById("startBtn").onclick = () => {
-  const correct = document.getElementById("correctInput").value
-    .split(",").map(s=>s.trim()).filter(Boolean);
-
-  const wrong = document.getElementById("wrongInput").value
-    .split(",").map(s=>s.trim()).filter(Boolean);
-
-  const levelKey = document.getElementById("level").value;
-  CONFIG = { correct, wrong, ...LEVELS[levelKey] };
-
+  CONFIG = {
+    correct: document.getElementById("correctInput").value.split(",").map(s=>s.trim()),
+    wrong: document.getElementById("wrongInput").value.split(",").map(s=>s.trim()),
+    required: 5
+  };
   resetGame();
   gameRunning = true;
 };
@@ -139,8 +110,8 @@ document.getElementById("startBtn").onclick = () => {
 
 function spawnItem() {
   const all = [
-    ...CONFIG.correct.map(t=>({ text:t, correct:true })),
-    ...CONFIG.wrong.map(t=>({ text:t, correct:false }))
+    ...CONFIG.correct.map(t=>({text:t, correct:true})),
+    ...CONFIG.wrong.map(t=>({text:t, correct:false}))
   ];
   const it = all[Math.floor(Math.random()*all.length)];
   items.push({
@@ -151,27 +122,30 @@ function spawnItem() {
 }
 
 function ensureItems() {
-  while (items.length < CONFIG.minItems) spawnItem();
+  while (items.length < 4) spawnItem();
 }
 
 /* =====================
-   ДВИЖЕНИЕ + РОСТ x2
+   ДВИЖЕНИЕ (ПУТЬ!)
 ===================== */
 
 function moveSnake() {
-  if (!target) return;
-  const head = snake[0];
-  const dx = target.x-head.x;
-  const dy = target.y-head.y;
-  const d = Math.sqrt(dx*dx+dy*dy);
-  if (d<2) return;
+  if (!target || path.length === 0) return;
 
-  snake.unshift({
-    x:head.x+(dx/d)*CONFIG.speed,
-    y:head.y+(dy/d)*CONFIG.speed
-  });
+  const head = path[0];
+  const dx = target.x - head.x;
+  const dy = target.y - head.y;
+  const d = Math.sqrt(dx*dx + dy*dy);
 
-  while (snake.length > Math.max(1, correctCount*2)) snake.pop();
+  if (d < 1) return;
+
+  const newHead = {
+    x: head.x + (dx/d)*speed,
+    y: head.y + (dy/d)*speed
+  };
+
+  path.unshift(newHead);
+  while (path.length > maxLength) path.pop();
 }
 
 /* =====================
@@ -179,15 +153,18 @@ function moveSnake() {
 ===================== */
 
 function checkCollision() {
-  const head = snake[0];
+  const head = path[0];
   items.forEach((item,i)=>{
     const dx=head.x-item.x;
     const dy=head.y-item.y;
-    if (Math.sqrt(dx*dx+dy*dy)<14) {
+    if (Math.sqrt(dx*dx+dy*dy) < 14) {
       if (item.correct) {
         correctCount++;
+        maxLength *= 2;   // 🔥 ВОТ ЗДЕСЬ РЕАЛЬНЫЙ РОСТ ×2
         showFeedback(true);
-      } else showFeedback(false);
+      } else {
+        showFeedback(false);
+      }
       items.splice(i,1);
     }
   });
@@ -200,10 +177,6 @@ function checkCollision() {
 function updateProgress() {
   const p = Math.min(correctCount/CONFIG.required*100,100);
   document.getElementById("progress-bar").style.width=p+"%";
-  if (p>=100) {
-    alert("🎉 Уровень пройден!");
-    gameRunning=false;
-  }
 }
 
 /* =====================
@@ -212,8 +185,8 @@ function updateProgress() {
 
 function showFeedback(ok) {
   const f=document.getElementById("feedback");
-  f.innerText=ok?"Верно!":"Подумай ещё";
-  f.className=ok?"success":"error";
+  f.innerText = ok ? "Верно!" : "Подумай ещё";
+  f.className = ok ? "success" : "error";
   setTimeout(()=>f.innerText="",600);
 }
 
@@ -224,6 +197,7 @@ function showFeedback(ok) {
 function draw() {
   ctx.clearRect(0,0,600,400);
 
+  // элементы
   items.forEach(it=>{
     ctx.fillStyle=it.correct?"#66bb6a":"#bdbdbd";
     ctx.fillRect(it.x-8,it.y-8,16,16);
@@ -231,10 +205,15 @@ function draw() {
     ctx.fillText(it.text,it.x-10,it.y-12);
   });
 
-  snake.forEach((s,i)=>{
-    ctx.fillStyle=i==0?"#2e7d32":"#81c784";
-    ctx.fillRect(s.x-8,s.y-8,16,16);
+  // змейка (ПУТЬ!)
+  ctx.strokeStyle="#4caf50";
+  ctx.lineWidth=6;
+  ctx.beginPath();
+  path.forEach((p,i)=>{
+    if(i===0) ctx.moveTo(p.x,p.y);
+    else ctx.lineTo(p.x,p.y);
   });
+  ctx.stroke();
 }
 
 /* =====================
@@ -257,10 +236,11 @@ function loop() {
 ===================== */
 
 function resetGame() {
-  snake=[{x:50,y:50}];
-  items=[];
-  target=null;
-  correctCount=0;
+  path = [{ x:50, y:50 }];
+  maxLength = 20;
+  correctCount = 0;
+  items = [];
+  target = null;
   document.getElementById("progress-bar").style.width="0%";
   ensureItems();
 }
