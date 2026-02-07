@@ -5,7 +5,7 @@
 <title>Змейка знаний</title>
 
 <style>
-body { font-family: Arial, sans-serif; background:#f2f2f2; }
+body { font-family: Arial, sans-serif; background:#eef2f5; }
 
 #game-wrapper {
   width: 720px;
@@ -13,6 +13,7 @@ body { font-family: Arial, sans-serif; background:#f2f2f2; }
   background:#fff;
   padding:12px;
   border-radius:12px;
+  position: relative;
 }
 
 h2 { text-align:center; margin:6px 0; }
@@ -40,7 +41,7 @@ canvas {
   display:block;
   margin:auto;
   border:2px solid #ddd;
-  background:#fdfefe;
+  background:#ffffff;
 }
 
 #progress {
@@ -56,13 +57,37 @@ canvas {
   background:#4caf50;
 }
 
-#feedback {
-  text-align:center;
-  font-weight:bold;
-  min-height:22px;
+/* ===== ЭКРАН ПОБЕДЫ ===== */
+
+#winScreen {
+  position:absolute;
+  inset:0;
+  background:rgba(0,0,0,0.6);
+  display:none;
+  align-items:center;
+  justify-content:center;
+  flex-direction:column;
+  z-index:10;
+  color:#fff;
 }
-.success { color:green; }
-.fail { color:#b71c1c; }
+
+#winText {
+  font-size:28px;
+  margin-bottom:12px;
+  text-align:center;
+}
+
+#restartBtn {
+  padding:8px 18px;
+  font-size:16px;
+}
+
+/* фейерверк поверх */
+#fireworks {
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+}
 </style>
 </head>
 
@@ -71,6 +96,7 @@ canvas {
 <div id="game-wrapper">
   <h2 id="taskTitle">Собери только существительные</h2>
 
+  <!-- РЕДАКТОР -->
   <div id="editor">
     <label>Вопрос / задание</label>
     <input id="taskInput" value="Собери только существительные">
@@ -81,13 +107,22 @@ canvas {
     <label>Неправильные слова</label>
     <textarea id="wrongInput">бежать, красивый, важный</textarea>
 
+    <label>Текст при победе</label>
+    <input id="winInput" value="🎉 Молодец! Задание выполнено!">
+
     <button id="startBtn">▶ Играть</button>
   </div>
 
   <canvas id="gameCanvas" width="600" height="400"></canvas>
 
   <div id="progress"><div id="progress-bar"></div></div>
-  <div id="feedback"></div>
+
+  <!-- ЭКРАН ПОБЕДЫ -->
+  <div id="winScreen">
+    <canvas id="fireworks"></canvas>
+    <div id="winText"></div>
+    <button id="restartBtn">🔄 Сыграть ещё раз</button>
+  </div>
 </div>
 
 <script>
@@ -96,10 +131,7 @@ canvas {
 ===================== */
 
 const MOVE_SPEED = 0.9;
-const SEGMENT_STEP = 10;
-const TOTAL_ITEMS_ON_FIELD = 6;
-const MIN_CORRECT_ON_FIELD = 1;
-const SAFE_TAIL_DISTANCE = 20;
+const TOTAL_ITEMS = 6;
 
 /* =====================
    ПЕРЕМЕННЫЕ
@@ -109,9 +141,7 @@ const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
 let path = [];
-let maxLength = 30;
-let direction = { x: 1, y: 0 };
-
+let direction = { x:1, y:0 };
 let items = [];
 let correctCount = 0;
 let REQUIRED = 0;
@@ -125,14 +155,10 @@ let CONFIG = null;
 canvas.addEventListener("click", e => {
   if (!gameRunning) return;
   const r = canvas.getBoundingClientRect();
-  const tx = e.clientX - r.left;
-  const ty = e.clientY - r.top;
-
   const head = path[0];
-  const dx = tx - head.x;
-  const dy = ty - head.y;
+  const dx = e.clientX - r.left - head.x;
+  const dy = e.clientY - r.top - head.y;
   const d = Math.sqrt(dx*dx + dy*dy) || 1;
-
   direction = { x: dx/d, y: dy/d };
 });
 
@@ -142,15 +168,17 @@ canvas.addEventListener("click", e => {
 
 document.getElementById("startBtn").onclick = () => {
   CONFIG = {
-    task: document.getElementById("taskInput").value,
-    correct: document.getElementById("correctInput").value.split(",").map(s=>s.trim()).filter(Boolean),
-    wrong: document.getElementById("wrongInput").value.split(",").map(s=>s.trim()).filter(Boolean)
+    task: taskInput.value,
+    correct: correctInput.value.split(",").map(s=>s.trim()),
+    wrong: wrongInput.value.split(",").map(s=>s.trim()),
+    winText: winInput.value
   };
 
   REQUIRED = CONFIG.correct.length;
-  document.getElementById("taskTitle").innerText = CONFIG.task;
+  taskTitle.innerText = CONFIG.task;
 
   resetGame();
+  hideWin();
   gameRunning = true;
 };
 
@@ -165,7 +193,6 @@ function spawnItem(forceCorrect=false) {
        ...CONFIG.wrong.map(t=>({text:t, correct:false}))];
 
   const it = pool[Math.floor(Math.random()*pool.length)];
-
   items.push({
     ...it,
     x:Math.random()*560+20,
@@ -174,10 +201,7 @@ function spawnItem(forceCorrect=false) {
 }
 
 function ensureItems() {
-  const correctOnField = items.filter(i=>i.correct).length;
-
-  while (items.length < TOTAL_ITEMS_ON_FIELD) spawnItem();
-  if (correctOnField < MIN_CORRECT_ON_FIELD) spawnItem(true);
+  while (items.length < TOTAL_ITEMS) spawnItem();
 }
 
 /* =====================
@@ -185,68 +209,37 @@ function ensureItems() {
 ===================== */
 
 function moveSnake() {
-  const head = path[0];
-  const newHead = {
-    x: head.x + direction.x * MOVE_SPEED,
-    y: head.y + direction.y * MOVE_SPEED
-  };
+  const h = path[0];
+  const nh = { x:h.x + direction.x*MOVE_SPEED, y:h.y + direction.y*MOVE_SPEED };
 
-  if (
-    newHead.x < 0 || newHead.x > canvas.width ||
-    newHead.y < 0 || newHead.y > canvas.height
-  ) {
-    gameRunning = false;
-    showFail("Змейка врезалась в стену 🧱");
+  if (nh.x<0||nh.x>600||nh.y<0||nh.y>400) {
+    gameRunning=false;
     return;
   }
 
-  path.unshift(newHead);
-  while (path.length > maxLength) path.pop();
-}
-
-/* =====================
-   САМОПЕРЕСЕЧЕНИЕ
-===================== */
-
-function checkSelfCollision() {
-  const head = path[0];
-  for (let i = SAFE_TAIL_DISTANCE; i < path.length; i++) {
-    const dx = head.x - path[i].x;
-    const dy = head.y - path[i].y;
-    if (Math.sqrt(dx*dx + dy*dy) < 6) {
-      gameRunning = false;
-      showFail("Змейка запуталась 🌀");
-      return;
-    }
-  }
+  path.unshift(nh);
+  while (path.length > 40) path.pop();
 }
 
 /* =====================
    СБОР
 ===================== */
 
-function checkItemCollision() {
-  const head = path[0];
-
-  items.forEach((item,i)=>{
-    const dx=head.x-item.x;
-    const dy=head.y-item.y;
-    if (Math.sqrt(dx*dx+dy*dy) < 14) {
-
-      if (!item.correct) {
-        gameRunning = false;
-        showFail("Неверный выбор ❌");
+function checkCollision() {
+  const h = path[0];
+  items.forEach((it,i)=>{
+    if (Math.hypot(h.x-it.x, h.y-it.y) < 14) {
+      if (!it.correct) {
+        gameRunning=false;
         return;
       }
-
       correctCount++;
-      maxLength += SEGMENT_STEP;
       items.splice(i,1);
       updateProgress();
 
       if (correctCount >= REQUIRED) {
-        gameRunning = false;
-        showSuccess("🎉 Задание выполнено!");
+        gameRunning=false;
+        showWin();
       }
     }
   });
@@ -257,24 +250,7 @@ function checkItemCollision() {
 ===================== */
 
 function updateProgress() {
-  const p = (correctCount / REQUIRED) * 100;
-  document.getElementById("progress-bar").style.width = p + "%";
-}
-
-/* =====================
-   ФИДБЕК
-===================== */
-
-function showFail(text) {
-  const f = document.getElementById("feedback");
-  f.innerText = text;
-  f.className = "fail";
-}
-
-function showSuccess(text) {
-  const f = document.getElementById("feedback");
-  f.innerText = text;
-  f.className = "success";
+  progressBar.style.width = (correctCount/REQUIRED*100) + "%";
 }
 
 /* =====================
@@ -284,25 +260,20 @@ function showSuccess(text) {
 function draw() {
   ctx.clearRect(0,0,600,400);
 
-  // одинаковые иконки
   items.forEach(it=>{
-    ctx.fillStyle = "#90caf9";
+    ctx.fillStyle="#90caf9";
     ctx.beginPath();
-    ctx.arc(it.x, it.y, 10, 0, Math.PI*2);
+    ctx.arc(it.x,it.y,10,0,Math.PI*2);
     ctx.fill();
 
     ctx.fillStyle="#000";
-    ctx.fillText(it.text, it.x - 12, it.y - 14);
+    ctx.fillText(it.text,it.x-14,it.y-14);
   });
 
-  // змейка
   ctx.strokeStyle="#4caf50";
   ctx.lineWidth=6;
   ctx.beginPath();
-  path.forEach((p,i)=>{
-    if(i===0) ctx.moveTo(p.x,p.y);
-    else ctx.lineTo(p.x,p.y);
-  });
+  path.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));
   ctx.stroke();
 }
 
@@ -313,8 +284,7 @@ function draw() {
 function loop() {
   if (gameRunning) {
     moveSnake();
-    checkItemCollision();
-    checkSelfCollision();
+    checkCollision();
     ensureItems();
   }
   draw();
@@ -322,23 +292,66 @@ function loop() {
 }
 
 /* =====================
+   ПОБЕДА + ФЕЙЕРВЕРК
+===================== */
+
+const fw = document.getElementById("fireworks");
+const fctx = fw.getContext("2d");
+fw.width = 720;
+fw.height = 500;
+let particles = [];
+
+function launchFirework() {
+  for (let i=0;i<30;i++) {
+    particles.push({
+      x:Math.random()*fw.width,
+      y:Math.random()*fw.height/2,
+      vx:(Math.random()-0.5)*4,
+      vy:(Math.random()-0.5)*4,
+      life:60
+    });
+  }
+}
+
+function drawFireworks() {
+  fctx.clearRect(0,0,fw.width,fw.height);
+  particles.forEach(p=>{
+    p.x+=p.vx; p.y+=p.vy; p.life--;
+    fctx.fillStyle="hsl("+Math.random()*360+",80%,60%)";
+    fctx.fillRect(p.x,p.y,3,3);
+  });
+  particles = particles.filter(p=>p.life>0);
+  requestAnimationFrame(drawFireworks);
+}
+
+function showWin() {
+  winText.innerText = CONFIG.winText;
+  winScreen.style.display="flex";
+  launchFirework();
+  drawFireworks();
+}
+
+function hideWin() {
+  winScreen.style.display="none";
+  particles=[];
+}
+
+restartBtn.onclick = () => {
+  hideWin();
+};
+
+/* =====================
    СБРОС
 ===================== */
 
 function resetGame() {
-  path = [{ x:300, y:200 }];
-  direction = { x:1, y:0 };
-  maxLength = 30;
-  correctCount = 0;
-  items = [];
-  document.getElementById("progress-bar").style.width="0%";
-  document.getElementById("feedback").innerText="";
+  path=[{x:300,y:200}];
+  direction={x:1,y:0};
+  items=[];
+  correctCount=0;
+  progressBar.style.width="0%";
   ensureItems();
 }
-
-/* =====================
-   СТАРТ
-===================== */
 
 loop();
 </script>
