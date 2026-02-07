@@ -62,7 +62,7 @@ canvas {
   min-height:22px;
 }
 .success { color:green; }
-.error { color:#c62828; }
+.error { color:#ef6c00; }
 .fail { color:#b71c1c; }
 </style>
 </head>
@@ -72,12 +72,11 @@ canvas {
 <div id="game-wrapper">
   <h2 id="taskTitle">Собери только существительные</h2>
 
-  <!-- РЕДАКТОР -->
   <div id="editor">
     <label>Вопрос / задание</label>
     <input id="taskInput" value="Собери только существительные">
 
-    <label>Правильные слова (через запятую)</label>
+    <label>Правильные слова</label>
     <textarea id="correctInput">стол, дом, окно, книга</textarea>
 
     <label>Неправильные слова</label>
@@ -97,11 +96,12 @@ canvas {
    НАСТРОЙКИ
 ===================== */
 
-const MOVE_SPEED = 0.9;          // ⬅ ещё медленнее
+const MOVE_SPEED = 0.9;
 const SEGMENT_STEP = 10;
 const REQUIRED = 6;
 const MIN_CORRECT_ON_FIELD = 2;
 const TOTAL_ITEMS_ON_FIELD = 6;
+const SAFE_TAIL_DISTANCE = 20; // 🔒 защита от ложного самопересечения
 
 /* =====================
    ПЕРЕМЕННЫЕ
@@ -144,10 +144,8 @@ canvas.addEventListener("click", e => {
 document.getElementById("startBtn").onclick = () => {
   CONFIG = {
     task: document.getElementById("taskInput").value,
-    correct: document.getElementById("correctInput").value
-      .split(",").map(s=>s.trim()).filter(Boolean),
-    wrong: document.getElementById("wrongInput").value
-      .split(",").map(s=>s.trim()).filter(Boolean)
+    correct: document.getElementById("correctInput").value.split(",").map(s=>s.trim()),
+    wrong: document.getElementById("wrongInput").value.split(",").map(s=>s.trim())
   };
 
   document.getElementById("taskTitle").innerText = CONFIG.task;
@@ -161,12 +159,10 @@ document.getElementById("startBtn").onclick = () => {
 ===================== */
 
 function spawnItem(forceCorrect=false) {
-  let pool = forceCorrect
+  const pool = forceCorrect
     ? CONFIG.correct.map(t=>({text:t, correct:true}))
-    : [
-        ...CONFIG.correct.map(t=>({text:t, correct:true})),
-        ...CONFIG.wrong.map(t=>({text:t, correct:false}))
-      ];
+    : [...CONFIG.correct.map(t=>({text:t, correct:true})),
+       ...CONFIG.wrong.map(t=>({text:t, correct:false}))];
 
   const it = pool[Math.floor(Math.random()*pool.length)];
 
@@ -180,13 +176,8 @@ function spawnItem(forceCorrect=false) {
 function ensureItems() {
   const correctOnField = items.filter(i=>i.correct).length;
 
-  while (items.length < TOTAL_ITEMS_ON_FIELD) {
-    spawnItem();
-  }
-
-  if (correctOnField < MIN_CORRECT_ON_FIELD) {
-    spawnItem(true);
-  }
+  while (items.length < TOTAL_ITEMS_ON_FIELD) spawnItem();
+  if (correctOnField < MIN_CORRECT_ON_FIELD) spawnItem(true);
 }
 
 /* =====================
@@ -202,7 +193,6 @@ function moveSnake() {
     y: head.y + direction.y * MOVE_SPEED
   };
 
-  // ⛔ СТОЛКНОВЕНИЕ СО СТЕНОЙ
   if (
     newHead.x < 0 || newHead.x > canvas.width ||
     newHead.y < 0 || newHead.y > canvas.height
@@ -217,23 +207,25 @@ function moveSnake() {
 }
 
 /* =====================
-   САМОПЕРЕСЕЧЕНИЕ
+   САМОПЕРЕСЕЧЕНИЕ (ИСПРАВЛЕНО)
 ===================== */
 
 function checkSelfCollision() {
   const head = path[0];
-  for (let i = 10; i < path.length; i++) {
+
+  for (let i = SAFE_TAIL_DISTANCE; i < path.length; i++) {
     const dx = head.x - path[i].x;
     const dy = head.y - path[i].y;
     if (Math.sqrt(dx*dx + dy*dy) < 6) {
       gameRunning = false;
       showFail("Змейка запуталась 🌀");
+      return;
     }
   }
 }
 
 /* =====================
-   СБОР ЭЛЕМЕНТОВ
+   СБОР
 ===================== */
 
 function checkItemCollision() {
@@ -243,18 +235,14 @@ function checkItemCollision() {
     const dx=head.x-item.x;
     const dy=head.y-item.y;
     if (Math.sqrt(dx*dx+dy*dy) < 14) {
-
-      // ❌ НЕПРАВИЛЬНЫЙ ОТВЕТ = ПРОИГРЫШ
       if (!item.correct) {
         gameRunning = false;
         showFail("Неверный выбор ❌");
         return;
       }
-
-      // ✔ ПРАВИЛЬНЫЙ
       correctCount++;
       maxLength += SEGMENT_STEP;
-      showFeedback(true);
+      showFeedback();
       items.splice(i,1);
     }
   });
@@ -273,7 +261,7 @@ function updateProgress() {
    ФИДБЕК
 ===================== */
 
-function showFeedback(ok) {
+function showFeedback() {
   const f = document.getElementById("feedback");
   f.innerText = "Верно!";
   f.className = "success";
@@ -293,7 +281,6 @@ function showFail(text) {
 function draw() {
   ctx.clearRect(0,0,600,400);
 
-  // элементы
   items.forEach(it=>{
     ctx.fillStyle = it.correct ? "#66bb6a" : "#cfd8dc";
     ctx.fillRect(it.x-8,it.y-8,16,16);
@@ -301,7 +288,6 @@ function draw() {
     ctx.fillText(it.text,it.x-10,it.y-12);
   });
 
-  // змейка
   ctx.strokeStyle="#4caf50";
   ctx.lineWidth=6;
   ctx.beginPath();
