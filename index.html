@@ -94,19 +94,26 @@ canvas {
 </div>
 
 <script>
+/* ===== DOM ===== */
+const taskTitle   = document.getElementById("taskTitle");
+const taskInput   = document.getElementById("taskInput");
+const correctInput= document.getElementById("correctInput");
+const wrongInput  = document.getElementById("wrongInput");
+const startBtn    = document.getElementById("startBtn");
+const progressBar = document.getElementById("progress-bar");
+const feedback    = document.getElementById("feedback");
+const canvas      = document.getElementById("gameCanvas");
+const ctx         = canvas.getContext("2d");
+
 /* ===== НАСТРОЙКИ ===== */
 const SPEED = 1;
-const TURN = 0.1;
+const TURN = 0.08;
 const REQUIRED = 5;
 
-/* ===== ПЕРЕМЕННЫЕ ===== */
-const canvas = document.getElementById("gameCanvas");
-const ctx = canvas.getContext("2d");
-
+/* ===== СОСТОЯНИЕ ===== */
 let snake = [];
 let angle = 0;
 let targetAngle = 0;
-
 let items = [];
 let correctCount = 0;
 let running = false;
@@ -123,12 +130,13 @@ canvas.addEventListener("click", e => {
 });
 
 /* ===== СТАРТ ===== */
-document.getElementById("startBtn").onclick = () => {
+startBtn.onclick = () => {
   CONFIG = {
     task: taskInput.value,
     correct: correctInput.value.split(",").map(s=>s.trim()).filter(Boolean),
     wrong: wrongInput.value.split(",").map(s=>s.trim()).filter(Boolean)
   };
+
   taskTitle.innerText = CONFIG.task;
   resetGame();
   running = true;
@@ -199,7 +207,6 @@ function updateProgress() {
 function draw() {
   ctx.clearRect(0,0,600,400);
 
-  // элементы
   items.forEach(it=>{
     ctx.fillStyle=it.correct?"#81c784":"#b0bec5";
     ctx.beginPath();
@@ -209,7 +216,6 @@ function draw() {
     ctx.fillText(it.text,it.x-12,it.y-14);
   });
 
-  // змейка
   ctx.strokeStyle="#66bb6a";
   ctx.lineWidth=8;
   ctx.beginPath();
@@ -219,7 +225,6 @@ function draw() {
   });
   ctx.stroke();
 
-  // голова
   const h=snake[0];
   ctx.fillStyle="#388e3c";
   ctx.beginPath();
