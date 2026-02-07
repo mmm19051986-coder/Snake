@@ -5,10 +5,7 @@
 <title>Змейка знаний</title>
 
 <style>
-  body {
-    font-family: Arial, sans-serif;
-    background: #f2f2f2;
-  }
+  body { font-family: Arial, sans-serif; background:#f2f2f2; }
 
   #game-wrapper {
     width: 640px;
@@ -18,53 +15,25 @@
     border-radius: 12px;
   }
 
-  #task {
-    text-align: center;
-    font-size: 20px;
-    margin-bottom: 8px;
-  }
+  #task { text-align:center; font-size:20px; margin-bottom:6px; }
 
-  #controls {
-    text-align: center;
-    margin-bottom: 6px;
-  }
+  #controls { text-align:center; margin-bottom:6px; }
 
-  button {
-    padding: 6px 14px;
-    font-size: 14px;
-    cursor: pointer;
-  }
+  button { padding:6px 14px; cursor:pointer; }
 
   canvas {
-    display: block;
-    margin: auto;
-    border: 2px solid #ddd;
-    background: #fff;
+    display:block;
+    margin:auto;
+    border:2px solid #ddd;
+    background:#fff;
   }
 
-  #progress {
-    height: 10px;
-    background: #ddd;
-    border-radius: 5px;
-    margin-top: 8px;
-    overflow: hidden;
-  }
+  #progress { height:10px; background:#ddd; border-radius:5px; margin-top:8px; }
+  #progress-bar { height:100%; width:0%; background:#4caf50; }
 
-  #progress-bar {
-    height: 100%;
-    width: 0%;
-    background: #4caf50;
-  }
-
-  #feedback {
-    text-align: center;
-    margin-top: 6px;
-    font-weight: bold;
-    min-height: 20px;
-  }
-
-  .success { color: green; }
-  .error { color: orange; }
+  #feedback { text-align:center; margin-top:6px; font-weight:bold; min-height:20px; }
+  .success { color:green; }
+  .error { color:orange; }
 </style>
 </head>
 
@@ -89,10 +58,11 @@
 ===================== */
 
 const CONFIG = {
-  correct: ["стол", "дом", "окно", "книга"],
-  wrong: ["бежать", "красивый"],
-  required: 5,
-  speed: 2
+  correct: ["стол","дом","окно","книга"],
+  wrong: ["бежать","красивый"],
+  required: 6,
+  speed: 2,
+  minItemsOnField: 4
 };
 
 /* =====================
@@ -102,19 +72,18 @@ const CONFIG = {
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-let snake = { x: 50, y: 50 };
+let snake = [{ x: 50, y: 50 }];
 let target = null;
 let items = [];
 let correctCount = 0;
 let gameRunning = false;
 
 /* =====================
-   КЛИК ПО ПОЛЮ
+   УПРАВЛЕНИЕ КЛИКОМ
 ===================== */
 
 canvas.addEventListener("click", e => {
   if (!gameRunning) return;
-
   const rect = canvas.getBoundingClientRect();
   target = {
     x: e.clientX - rect.left,
@@ -123,7 +92,7 @@ canvas.addEventListener("click", e => {
 });
 
 /* =====================
-   КНОПКА СТАРТ
+   СТАРТ
 ===================== */
 
 document.getElementById("startBtn").onclick = () => {
@@ -135,38 +104,46 @@ document.getElementById("startBtn").onclick = () => {
    ЭЛЕМЕНТЫ
 ===================== */
 
-function spawnItems() {
-  items = [];
+function spawnItem() {
   const all = [
-    ...CONFIG.correct.map(t => ({ text: t, correct: true })),
-    ...CONFIG.wrong.map(t => ({ text: t, correct: false }))
+    ...CONFIG.correct.map(t => ({ text:t, correct:true })),
+    ...CONFIG.wrong.map(t => ({ text:t, correct:false }))
   ];
+  const item = all[Math.floor(Math.random()*all.length)];
+  items.push({
+    ...item,
+    x: Math.random()*560+20,
+    y: Math.random()*360+20
+  });
+}
 
-  for (let i = 0; i < 7; i++) {
-    const item = all[Math.floor(Math.random() * all.length)];
-    items.push({
-      ...item,
-      x: Math.random() * 560 + 20,
-      y: Math.random() * 360 + 20
-    });
+function ensureItems() {
+  while (items.length < CONFIG.minItemsOnField) {
+    spawnItem();
   }
 }
 
 /* =====================
-   ДВИЖЕНИЕ К ЦЕЛИ
+   ДВИЖЕНИЕ + ХВОСТ
 ===================== */
 
 function moveSnake() {
   if (!target) return;
 
-  const dx = target.x - snake.x;
-  const dy = target.y - snake.y;
-  const dist = Math.sqrt(dx * dx + dy * dy);
+  const head = snake[0];
+  const dx = target.x - head.x;
+  const dy = target.y - head.y;
+  const dist = Math.sqrt(dx*dx + dy*dy);
 
   if (dist < 2) return;
 
-  snake.x += (dx / dist) * CONFIG.speed;
-  snake.y += (dy / dist) * CONFIG.speed;
+  const newHead = {
+    x: head.x + (dx/dist)*CONFIG.speed,
+    y: head.y + (dy/dist)*CONFIG.speed
+  };
+
+  snake.unshift(newHead);
+  while (snake.length > correctCount + 1) snake.pop();
 }
 
 /* =====================
@@ -174,19 +151,20 @@ function moveSnake() {
 ===================== */
 
 function checkCollision() {
-  items.forEach((item, index) => {
-    const dx = snake.x - item.x;
-    const dy = snake.y - item.y;
-    if (Math.sqrt(dx * dx + dy * dy) < 14) {
+  const head = snake[0];
 
+  items.forEach((item, index) => {
+    const dx = head.x - item.x;
+    const dy = head.y - item.y;
+
+    if (Math.sqrt(dx*dx + dy*dy) < 14) {
       if (item.correct) {
         correctCount++;
         showFeedback(true);
       } else {
         showFeedback(false);
       }
-
-      items.splice(index, 1);
+      items.splice(index,1);
     }
   });
 }
@@ -196,8 +174,11 @@ function checkCollision() {
 ===================== */
 
 function updateProgress() {
-  const percent = (correctCount / CONFIG.required) * 100;
-  document.getElementById("progress-bar").style.width = percent + "%";
+  const percent = Math.min(
+    (correctCount / CONFIG.required) * 100,
+    100
+  );
+  document.getElementById("progress-bar").style.width = percent+"%";
 
   if (percent >= 100) {
     alert("🎉 Задание выполнено!");
@@ -213,7 +194,7 @@ function showFeedback(success) {
   const box = document.getElementById("feedback");
   box.innerText = success ? "Верно!" : "Подумай ещё";
   box.className = success ? "success" : "error";
-  setTimeout(() => box.innerText = "", 700);
+  setTimeout(()=>box.innerText="",700);
 }
 
 /* =====================
@@ -221,19 +202,21 @@ function showFeedback(success) {
 ===================== */
 
 function draw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.clearRect(0,0,canvas.width,canvas.height);
 
   // элементы
-  items.forEach(item => {
+  items.forEach(item=>{
     ctx.fillStyle = item.correct ? "#66bb6a" : "#bdbdbd";
-    ctx.fillRect(item.x - 8, item.y - 8, 16, 16);
-    ctx.fillStyle = "#000";
-    ctx.fillText(item.text, item.x - 10, item.y - 12);
+    ctx.fillRect(item.x-8,item.y-8,16,16);
+    ctx.fillStyle="#000";
+    ctx.fillText(item.text,item.x-10,item.y-12);
   });
 
-  // змейка
-  ctx.fillStyle = "#4caf50";
-  ctx.fillRect(snake.x - 8, snake.y - 8, 16, 16);
+  // хвост
+  snake.forEach((seg,i)=>{
+    ctx.fillStyle = i===0 ? "#2e7d32" : "#81c784";
+    ctx.fillRect(seg.x-8,seg.y-8,16,16);
+  });
 }
 
 /* =====================
@@ -244,6 +227,7 @@ function loop() {
   if (gameRunning) {
     moveSnake();
     checkCollision();
+    ensureItems();
     updateProgress();
   }
   draw();
@@ -255,11 +239,12 @@ function loop() {
 ===================== */
 
 function resetGame() {
-  snake = { x: 50, y: 50 };
-  target = null;
+  snake = [{ x:50, y:50 }];
+  items = [];
   correctCount = 0;
-  document.getElementById("progress-bar").style.width = "0%";
-  spawnItems();
+  target = null;
+  document.getElementById("progress-bar").style.width="0%";
+  ensureItems();
 }
 
 /* =====================
