@@ -13,16 +13,26 @@
   #game-wrapper {
     width: 640px;
     margin: 20px auto;
-    background: #ffffff;
+    background: #fff;
     padding: 12px;
     border-radius: 12px;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
   }
 
   #task {
     text-align: center;
     font-size: 20px;
     margin-bottom: 8px;
+  }
+
+  #controls {
+    text-align: center;
+    margin-bottom: 6px;
+  }
+
+  button {
+    padding: 6px 14px;
+    font-size: 14px;
+    cursor: pointer;
   }
 
   canvas {
@@ -44,60 +54,45 @@
     height: 100%;
     width: 0%;
     background: #4caf50;
-    transition: width 0.3s;
   }
 
   #feedback {
     text-align: center;
-    margin-top: 8px;
+    margin-top: 6px;
     font-weight: bold;
-    min-height: 22px;
+    min-height: 20px;
   }
 
-  .success { color: #2e7d32; }
-  .error { color: #ef6c00; }
+  .success { color: green; }
+  .error { color: orange; }
 </style>
 </head>
 
 <body>
 
 <div id="game-wrapper">
-  <div id="task"></div>
+  <div id="task">Собери только существительные</div>
+
+  <div id="controls">
+    <button id="startBtn">▶ Старт</button>
+  </div>
+
   <canvas id="gameCanvas" width="600" height="400"></canvas>
+
   <div id="progress"><div id="progress-bar"></div></div>
   <div id="feedback"></div>
 </div>
 
 <script>
 /* =====================
-   КОНФИГУРАЦИЯ
+   НАСТРОЙКИ
 ===================== */
 
-const GAME_CONFIG = {
-  taskText: "Собери только существительные",
-
-  correctItems: ["стол", "дом", "окно", "книга"],
-  wrongItems: ["бежать", "красивый", "думать"],
-
-  gameplay: {
-    speed: 160,
-    snakeGrowth: true,
-    elementsOnField: 7,
-    noPenaltyMode: true
-  },
-
-  progress: {
-    requiredCorrect: 6
-  },
-
-  ui: {
-    noTextMode: false
-  },
-
-  feedback: {
-    successText: ["Верно!", "Отлично!", "Молодец!"],
-    errorText: ["Подумай ещё", "Попробуй снова"]
-  }
+const CONFIG = {
+  correct: ["стол", "дом", "окно", "книга"],
+  wrong: ["бежать", "красивый"],
+  required: 5,
+  speed: 2
 };
 
 /* =====================
@@ -106,92 +101,86 @@ const GAME_CONFIG = {
 
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
-document.getElementById("task").innerText = GAME_CONFIG.taskText;
 
-const CELL = 20;
-const COLS = canvas.width / CELL;
-const ROWS = canvas.height / CELL;
-
-let snake = [{ x: 5, y: 5 }];
-let snakeLength = 1;
-
-let direction = "RIGHT";
-let nextDirection = "RIGHT";
-
+let snake = { x: 50, y: 50 };
+let target = null;
 let items = [];
-let correctCollected = 0;
+let correctCount = 0;
+let gameRunning = false;
 
 /* =====================
-   УПРАВЛЕНИЕ
+   КЛИК ПО ПОЛЮ
 ===================== */
 
-document.addEventListener("keydown", e => {
-  if (e.key === "ArrowUp" && direction !== "DOWN") nextDirection = "UP";
-  if (e.key === "ArrowDown" && direction !== "UP") nextDirection = "DOWN";
-  if (e.key === "ArrowLeft" && direction !== "RIGHT") nextDirection = "LEFT";
-  if (e.key === "ArrowRight" && direction !== "LEFT") nextDirection = "RIGHT";
+canvas.addEventListener("click", e => {
+  if (!gameRunning) return;
+
+  const rect = canvas.getBoundingClientRect();
+  target = {
+    x: e.clientX - rect.left,
+    y: e.clientY - rect.top
+  };
 });
 
 /* =====================
-   СПАВН ЭЛЕМЕНТОВ
+   КНОПКА СТАРТ
+===================== */
+
+document.getElementById("startBtn").onclick = () => {
+  resetGame();
+  gameRunning = true;
+};
+
+/* =====================
+   ЭЛЕМЕНТЫ
 ===================== */
 
 function spawnItems() {
   items = [];
   const all = [
-    ...GAME_CONFIG.correctItems.map(t => ({ text: t, correct: true })),
-    ...GAME_CONFIG.wrongItems.map(t => ({ text: t, correct: false }))
+    ...CONFIG.correct.map(t => ({ text: t, correct: true })),
+    ...CONFIG.wrong.map(t => ({ text: t, correct: false }))
   ];
 
-  while (items.length < GAME_CONFIG.gameplay.elementsOnField) {
+  for (let i = 0; i < 7; i++) {
     const item = all[Math.floor(Math.random() * all.length)];
-    const pos = {
-      x: Math.floor(Math.random() * COLS),
-      y: Math.floor(Math.random() * ROWS)
-    };
-
-    if (!items.some(i => i.x === pos.x && i.y === pos.y)) {
-      items.push({ ...item, ...pos });
-    }
+    items.push({
+      ...item,
+      x: Math.random() * 560 + 20,
+      y: Math.random() * 360 + 20
+    });
   }
 }
 
 /* =====================
-   ДВИЖЕНИЕ ЗМЕЙКИ
+   ДВИЖЕНИЕ К ЦЕЛИ
 ===================== */
 
 function moveSnake() {
-  direction = nextDirection;
-  const head = { ...snake[0] };
+  if (!target) return;
 
-  if (direction === "UP") head.y--;
-  if (direction === "DOWN") head.y++;
-  if (direction === "LEFT") head.x--;
-  if (direction === "RIGHT") head.x++;
+  const dx = target.x - snake.x;
+  const dy = target.y - snake.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
 
-  // мягкие границы
-  if (head.x < 0) head.x = COLS - 1;
-  if (head.y < 0) head.y = ROWS - 1;
-  if (head.x >= COLS) head.x = 0;
-  if (head.y >= ROWS) head.y = 0;
+  if (dist < 2) return;
 
-  snake.unshift(head);
-  while (snake.length > snakeLength) snake.pop();
+  snake.x += (dx / dist) * CONFIG.speed;
+  snake.y += (dy / dist) * CONFIG.speed;
 }
 
 /* =====================
-   СБОР ЭЛЕМЕНТОВ
+   СБОР
 ===================== */
 
 function checkCollision() {
-  const head = snake[0];
-
   items.forEach((item, index) => {
-    if (head.x === item.x && head.y === item.y) {
+    const dx = snake.x - item.x;
+    const dy = snake.y - item.y;
+    if (Math.sqrt(dx * dx + dy * dy) < 14) {
 
       if (item.correct) {
-        snakeLength++;
-        correctCollected++;
+        correctCount++;
         showFeedback(true);
       } else {
         showFeedback(false);
@@ -207,14 +196,12 @@ function checkCollision() {
 ===================== */
 
 function updateProgress() {
-  const percent =
-    (correctCollected / GAME_CONFIG.progress.requiredCorrect) * 100;
-
+  const percent = (correctCount / CONFIG.required) * 100;
   document.getElementById("progress-bar").style.width = percent + "%";
 
   if (percent >= 100) {
     alert("🎉 Задание выполнено!");
-    resetGame();
+    gameRunning = false;
   }
 }
 
@@ -224,14 +211,9 @@ function updateProgress() {
 
 function showFeedback(success) {
   const box = document.getElementById("feedback");
-  const texts = success
-    ? GAME_CONFIG.feedback.successText
-    : GAME_CONFIG.feedback.errorText;
-
-  box.innerText = texts[Math.floor(Math.random() * texts.length)];
+  box.innerText = success ? "Верно!" : "Подумай ещё";
   box.className = success ? "success" : "error";
-
-  setTimeout(() => box.innerText = "", 800);
+  setTimeout(() => box.innerText = "", 700);
 }
 
 /* =====================
@@ -243,32 +225,29 @@ function draw() {
 
   // элементы
   items.forEach(item => {
-    ctx.fillStyle = item.correct ? "#81c784" : "#bdbdbd";
-    ctx.fillRect(item.x * CELL, item.y * CELL, CELL - 2, CELL - 2);
-
-    if (!GAME_CONFIG.ui.noTextMode) {
-      ctx.fillStyle = "#000";
-      ctx.font = "12px Arial";
-      ctx.fillText(item.text, item.x * CELL, item.y * CELL - 2);
-    }
+    ctx.fillStyle = item.correct ? "#66bb6a" : "#bdbdbd";
+    ctx.fillRect(item.x - 8, item.y - 8, 16, 16);
+    ctx.fillStyle = "#000";
+    ctx.fillText(item.text, item.x - 10, item.y - 12);
   });
 
   // змейка
   ctx.fillStyle = "#4caf50";
-  snake.forEach(seg => {
-    ctx.fillRect(seg.x * CELL, seg.y * CELL, CELL - 2, CELL - 2);
-  });
+  ctx.fillRect(snake.x - 8, snake.y - 8, 16, 16);
 }
 
 /* =====================
-   ЦИКЛ ИГРЫ
+   ЦИКЛ
 ===================== */
 
-function gameLoop() {
-  moveSnake();
-  checkCollision();
-  updateProgress();
+function loop() {
+  if (gameRunning) {
+    moveSnake();
+    checkCollision();
+    updateProgress();
+  }
   draw();
+  requestAnimationFrame(loop);
 }
 
 /* =====================
@@ -276,9 +255,10 @@ function gameLoop() {
 ===================== */
 
 function resetGame() {
-  snake = [{ x: 5, y: 5 }];
-  snakeLength = 1;
-  correctCollected = 0;
+  snake = { x: 50, y: 50 };
+  target = null;
+  correctCount = 0;
+  document.getElementById("progress-bar").style.width = "0%";
   spawnItems();
 }
 
@@ -286,8 +266,7 @@ function resetGame() {
    СТАРТ
 ===================== */
 
-spawnItems();
-setInterval(gameLoop, GAME_CONFIG.gameplay.speed);
+loop();
 </script>
 
 </body>
